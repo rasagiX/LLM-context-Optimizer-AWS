@@ -1,0 +1,11 @@
+# ML/NLP dependencies for the context-pruning component
+#
+# Install with:
+#   pip install -r ml/requirements.txt
+#
+# Notes:
+#   - sentence-transformers pulls in torch automatically.
+#   - No AWS SDK here yet — that will be added when we integrate Bedrock.
+
+sentence-transformers==3.0.1
+numpy>=1.24,<2.0

@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# sentence-transformers model cache
+.cache/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environment variables — never commit real credentials
+.env
+.env.*
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
