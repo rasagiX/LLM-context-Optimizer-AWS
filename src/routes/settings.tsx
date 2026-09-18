@@ -1,0 +1,3 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { SettingsDashboard } from "@/components/tokenopt/settings-dashboard";
+export const Route = createFileRoute("/settings")({ head: () => ({ meta: [{ title: "Optimization Settings — TokenOpt" }, { name: "description", content: "Configure TokenOpt quality thresholds, models, and context defaults." }, { property: "og:title", content: "Optimization Settings — TokenOpt" }, { property: "og:description", content: "Control quality safeguards and optimization defaults." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary_large_image" }] }), component: SettingsDashboard });

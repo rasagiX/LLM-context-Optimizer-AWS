@@ -1,0 +1,3 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { AnalyticsDashboard } from "@/components/tokenopt/analytics-dashboard";
+export const Route = createFileRoute("/analytics")({ head: () => ({ meta: [{ title: "LLM Cost Analytics — TokenOpt" }, { name: "description", content: "Estimate monthly LLM token costs and explore TokenOpt's quality-to-efficiency curve." }, { property: "og:title", content: "LLM Cost Analytics — TokenOpt" }, { property: "og:description", content: "Simulate LLM costs, token savings, and quality tradeoffs." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary_large_image" }] }), component: AnalyticsDashboard });

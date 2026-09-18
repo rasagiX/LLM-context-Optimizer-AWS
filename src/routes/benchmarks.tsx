@@ -1,0 +1,3 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { BenchmarksDashboard } from "@/components/tokenopt/benchmarks-dashboard";
+export const Route = createFileRoute("/benchmarks")({ head: () => ({ meta: [{ title: "LLM Optimization Benchmark — TokenOpt" }, { name: "description", content: "Evaluate token reduction and answer quality across TokenOpt's fixed 10-task workload." }, { property: "og:title", content: "LLM Optimization Benchmark — TokenOpt" }, { property: "og:description", content: "Compare token savings, cost reduction, and quality across a fixed benchmark." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary_large_image" }] }), component: BenchmarksDashboard });
