@@ -37,4 +37,13 @@ def select(tools: list[dict], question: str, top_n: int = 5) -> list[dict]:
         scored.append((overlap, tool))
 
     scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [tool for _, tool in scored[:top_n]]
+
+    # If any tools have non-zero overlap, drop zero-overlap tools
+    # (they are clearly irrelevant). Always keep at least 1 tool.
+    best_score = scored[0][0] if scored else 0
+    if best_score > 0:
+        kept = [(s, t) for s, t in scored if s > 0]
+    else:
+        kept = scored
+
+    return [tool for _, tool in kept[:top_n]]

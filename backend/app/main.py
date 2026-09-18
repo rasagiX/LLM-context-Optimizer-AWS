@@ -6,6 +6,12 @@ Step 2 onward (LLM connection, baseline runner, optimizer, judge) is added
 incrementally in app/api and app/services.
 """
 
+# Load .env FIRST — before any module that calls os.getenv() is imported.
+# Without this, AWS_REGION, AWS_ACCESS_KEY_ID, BEDROCK_MODEL_ID, and
+# EMBEDDER_BACKEND are all silently empty when the server starts.
+from dotenv import load_dotenv
+load_dotenv()  # reads backend/.env (or .env in cwd) into os.environ
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

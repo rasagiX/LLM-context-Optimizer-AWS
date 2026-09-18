@@ -39,7 +39,7 @@ def _prune_semantic(
     documents: list[dict],
     question: str,
     top_k: int = -1,
-    threshold: float = 0.1,
+    threshold: float = 0.2,
 ) -> list[dict]:
     """
     Score documents against the question using cosine similarity on
@@ -142,7 +142,7 @@ def prune(
     documents: list[dict],
     question: str,
     top_k: int = -1,
-    threshold: float = 0.1,
+    threshold: float = 0.2,
 ) -> list[dict]:
     """
     Remove documents that are not semantically relevant to the question.
