@@ -5,51 +5,55 @@ Responsible for converting text into numerical vectors (embeddings).
 
 Why this is its own module:
     - The embedding model is the most likely component to swap out later.
-      Right now we use a local sentence-transformers model.
-      Later this becomes an AWS Bedrock Titan Embeddings API call.
-    - Isolating it here means pruner.py, scorer.py, and deduplicator.py
-      never need to change when we upgrade the model.
+    - Everything else (scorer, pruner, deduplicator) only sees numpy arrays
+      and never needs to change when the backend switches.
 
-Current backend:
-    - sentence-transformers: all-MiniLM-L6-v2
-      * Fast, runs entirely locally — no API key needed
-      * 384-dimensional output vectors
-      * Good quality for a prototype
+Backends (controlled by EMBEDDER_BACKEND env var):
+    local  (default) — sentence-transformers all-MiniLM-L6-v2, runs on CPU,
+                        no API key needed, 384-dimensional vectors.
+    bedrock          — AWS Bedrock Titan Embeddings V2, 1024-dimensional
+                        vectors, requires AWS credentials in environment.
 
-Future backend (AWS):
-    - amazon.titan-embed-text-v1 via boto3 + AWS Bedrock
-      * Drop-in replacement: same input/output contract
-      * Swap happens only inside this file
+Switching backends:
+    Set EMBEDDER_BACKEND=bedrock in backend/.env (or export it).
+    Everything else in the codebase stays the same.
 
 Async safety:
-    model.encode() is a blocking CPU call. In an async FastAPI app, calling
-    it directly on the event loop starves other requests for its duration.
-    embed_async() and embed_query_async() run the blocking call in a thread
-    pool executor so the event loop stays free.
+    Both backends expose embed_async() / embed_query_async() that run the
+    blocking call in a thread pool executor so the FastAPI event loop is
+    never blocked.
 """
 
 import asyncio
+import json
 import logging
+import os
 from typing import List
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_model = None
-_MODEL_NAME = "all-MiniLM-L6-v2"
+# ---------------------------------------------------------------------------
+# Backend selection
+# ---------------------------------------------------------------------------
+
+EMBEDDER_BACKEND = os.getenv("EMBEDDER_BACKEND", "local").lower()
+# local   → sentence-transformers (default, works offline)
+# bedrock → AWS Bedrock Titan Embeddings V2
+
+# ---------------------------------------------------------------------------
+# Local backend — sentence-transformers
+# ---------------------------------------------------------------------------
+
+_local_model = None
+_LOCAL_MODEL_NAME = "all-MiniLM-L6-v2"
 
 
-def get_embedder():
-    """
-    Return the singleton embedding model, loading it on first call.
-
-    Lazy loading avoids slow startup when the module is imported
-    but embed() hasn't been called yet (e.g. during tests that mock
-    this function, or when running the backend without ml deps installed).
-    """
-    global _model
-    if _model is None:
+def _get_local_model():
+    """Lazy-load the local sentence-transformers model (singleton)."""
+    global _local_model
+    if _local_model is None:
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as e:
@@ -57,23 +61,77 @@ def get_embedder():
                 "sentence-transformers is not installed. "
                 "Run: pip install sentence-transformers"
             ) from e
+        logger.info("[embedder] Loading local model '%s'...", _LOCAL_MODEL_NAME)
+        _local_model = SentenceTransformer(_LOCAL_MODEL_NAME)
+        logger.info("[embedder] Local model loaded.")
+    return _local_model
 
-        logger.info("[embedder] Loading model '%s'...", _MODEL_NAME)
-        _model = SentenceTransformer(_MODEL_NAME)
-        logger.info("[embedder] Model loaded.")
 
-    return _model
+def _embed_local(texts: List[str]) -> np.ndarray:
+    model = _get_local_model()
+    return model.encode(texts, convert_to_numpy=True)
 
 
 # ---------------------------------------------------------------------------
-# Synchronous API (use in scripts, tests, and non-async contexts)
+# Bedrock backend — Amazon Titan Embeddings V2
+# ---------------------------------------------------------------------------
+
+_BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
+_BEDROCK_REGION   = os.getenv("AWS_REGION", "us-east-1")
+
+# Titan Embeddings V2 supports 256, 512, or 1024 dimensions.
+# 512 is the best balance of quality vs speed for our use case.
+_TITAN_DIMENSIONS = 512
+
+
+def _embed_bedrock(texts: List[str]) -> np.ndarray:
+    """
+    Embed a list of texts using Amazon Titan Embeddings V2 via Bedrock.
+
+    Titan does not support batch embedding — we call the API once per text.
+    For small lists (< 50 docs) this is fast enough. For larger workloads,
+    add concurrency here (asyncio.gather or a thread pool).
+
+    Requires in environment (set in backend/.env):
+        AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+        or an IAM role if running on EC2/Lambda.
+    """
+    import boto3
+
+    client = boto3.client("bedrock-runtime", region_name=_BEDROCK_REGION)
+    vectors = []
+
+    for text in texts:
+        body = json.dumps({
+            "inputText": text,
+            "dimensions": _TITAN_DIMENSIONS,
+            "normalize": True,   # unit-normalise so cosine sim = dot product
+        })
+        response = client.invoke_model(
+            modelId=_BEDROCK_MODEL_ID,
+            body=body,
+            contentType="application/json",
+            accept="application/json",
+        )
+        payload = json.loads(response["body"].read())
+        vectors.append(payload["embedding"])
+
+    return np.array(vectors, dtype=np.float32)
+
+
+# ---------------------------------------------------------------------------
+# Unified synchronous API
 # ---------------------------------------------------------------------------
 
 def embed(texts: List[str]) -> np.ndarray:
     """
     Convert a list of text strings into a 2D array of embedding vectors.
 
-    BLOCKING — do not call directly from an async FastAPI route or service.
+    Backend is selected by EMBEDDER_BACKEND env var:
+        EMBEDDER_BACKEND=local   → all-MiniLM-L6-v2 (default)
+        EMBEDDER_BACKEND=bedrock → Amazon Titan Embeddings V2
+
+    BLOCKING — do not call from an async FastAPI handler.
     Use embed_async() instead.
 
     Args:
@@ -81,28 +139,24 @@ def embed(texts: List[str]) -> np.ndarray:
 
     Returns:
         np.ndarray of shape (len(texts), embedding_dim).
-
-    Example:
-        >>> vecs = embed(["Hello world", "How are you?"])
-        >>> vecs.shape
-        (2, 384)
+        Dim is 384 for local, 512 for bedrock.
     """
     if not texts:
         return np.array([])
 
-    model = get_embedder()
-    vectors = model.encode(texts, convert_to_numpy=True)
-    return vectors
+    if EMBEDDER_BACKEND == "bedrock":
+        logger.debug("[embedder] using Bedrock Titan backend")
+        return _embed_bedrock(texts)
+    else:
+        logger.debug("[embedder] using local sentence-transformers backend")
+        return _embed_local(texts)
 
 
 def embed_query(query: str) -> np.ndarray:
     """
-    Convenience wrapper: embed a single query string synchronously.
+    Embed a single query string synchronously.
 
     BLOCKING — use embed_query_async() from async contexts.
-
-    Args:
-        query: The user's question or search string.
 
     Returns:
         np.ndarray of shape (embedding_dim,) — a 1D vector.
@@ -111,28 +165,24 @@ def embed_query(query: str) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Async API (use from FastAPI route handlers and async services)
+# Unified async API (use from FastAPI route handlers)
 # ---------------------------------------------------------------------------
 
 async def embed_async(texts: List[str]) -> np.ndarray:
     """
-    Non-blocking version of embed(). Runs model.encode() in a thread pool
-    executor so the asyncio event loop is not blocked during inference.
+    Non-blocking version of embed(). Runs in a thread pool executor so
+    the asyncio event loop is not blocked during model inference or API calls.
 
     Args:
         texts: List of strings to embed.
 
     Returns:
         np.ndarray of shape (len(texts), embedding_dim).
-
-    Example (inside a FastAPI route or async service):
-        vectors = await embed_async(["chunk one", "chunk two"])
     """
     if not texts:
         return np.array([])
 
     loop = asyncio.get_event_loop()
-    # run_in_executor offloads the blocking call to the default ThreadPoolExecutor
     vectors = await loop.run_in_executor(None, embed, texts)
     return vectors
 
@@ -140,9 +190,6 @@ async def embed_async(texts: List[str]) -> np.ndarray:
 async def embed_query_async(query: str) -> np.ndarray:
     """
     Non-blocking version of embed_query(). Use from async FastAPI handlers.
-
-    Args:
-        query: The user's question or search string.
 
     Returns:
         np.ndarray of shape (embedding_dim,) — a 1D vector.
