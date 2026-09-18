@@ -1,0 +1,98 @@
+[
+  {
+    "id": "task_01",
+    "category": "document_qa",
+    "question": "What was the company's revenue growth in Q3?",
+    "conversation": [],
+    "documents": [
+      {
+        "id": "financials_q2q3",
+        "content": "Q2 revenue was $4,200,000. Q3 revenue was $5,100,000. Refunds in Q3 totaled $80,000 and are tracked separately. The marketing team spent $200,000 on Q3 campaigns unrelated to this calculation."
+      }
+    ],
+    "tools": [],
+    "rubric": [
+      "Uses Q2 revenue of 4,200,000",
+      "Uses Q3 revenue of 5,100,000",
+      "Calculates percentage growth correctly (~21.4%)",
+      "Does not invent values"
+    ]
+  },
+  {
+    "id": "task_02",
+    "category": "long_conversation",
+    "question": "Given everything we discussed, what deployment region did we settle on?",
+    "conversation": [
+      { "role": "user", "content": "We're building a new service, thinking about AWS." },
+      { "role": "assistant", "content": "Sure, what are your latency requirements?" },
+      { "role": "user", "content": "Most users are in Europe." },
+      { "role": "assistant", "content": "eu-west-1 or eu-central-1 would be good starting points." },
+      { "role": "user", "content": "We also need GDPR compliance for data residency." },
+      { "role": "assistant", "content": "Both regions are EU-based so that's fine." },
+      { "role": "user", "content": "Let's also talk about the database choice." },
+      { "role": "assistant", "content": "DynamoDB or Aurora Postgres are both solid." },
+      { "role": "user", "content": "We'll go with DynamoDB for the benchmark results table." },
+      { "role": "assistant", "content": "Good choice given the access patterns you described." },
+      { "role": "user", "content": "Okay, and after comparing eu-west-1 vs eu-central-1 latency for our test users, we picked eu-west-1." },
+      { "role": "assistant", "content": "Noted, eu-west-1 it is." }
+    ],
+    "documents": [],
+    "tools": [],
+    "rubric": [
+      "Answer is eu-west-1",
+      "Does not confuse it with eu-central-1",
+      "Does not invent a region not discussed"
+    ]
+  },
+  {
+    "id": "task_03",
+    "category": "coding",
+    "question": "Write a Python function that returns True if a string is a palindrome, ignoring case and spaces.",
+    "conversation": [],
+    "documents": [],
+    "tools": [],
+    "rubric": [
+      "Function correctly ignores case",
+      "Function correctly ignores spaces",
+      "Handles empty string",
+      "Code is syntactically valid Python"
+    ]
+  },
+  {
+    "id": "task_04",
+    "category": "tool_using_agent",
+    "question": "Check the weather in Paris and tell me if I should bring an umbrella.",
+    "conversation": [],
+    "documents": [],
+    "tools": [
+      { "name": "get_weather", "description": "Get current weather for a city.", "input_schema": { "city": "string" } },
+      { "name": "send_email", "description": "Send an email to a recipient.", "input_schema": { "to": "string", "body": "string" } },
+      { "name": "create_calendar_event", "description": "Create a calendar event.", "input_schema": { "title": "string", "time": "string" } },
+      { "name": "search_web", "description": "Search the web for a query.", "input_schema": { "query": "string" } },
+      { "name": "get_stock_price", "description": "Get the current stock price for a ticker.", "input_schema": { "ticker": "string" } }
+    ],
+    "rubric": [
+      "Uses get_weather tool concept correctly",
+      "Gives a clear umbrella recommendation",
+      "Does not fabricate weather data if none provided"
+    ]
+  },
+  {
+    "id": "task_05",
+    "category": "multi_document_qa",
+    "question": "Which vendor offered the lowest total cost including shipping?",
+    "conversation": [],
+    "documents": [
+      { "id": "vendor_a", "content": "Vendor A: unit price $12, shipping $50, minimum order 100 units." },
+      { "id": "vendor_b", "content": "Vendor B: unit price $11.50, shipping $120, minimum order 100 units." },
+      { "id": "vendor_c", "content": "Vendor C: unit price $13, shipping free, minimum order 100 units." },
+      { "id": "unrelated_hr_policy", "content": "Company HR policy: all vendors must be reviewed annually for compliance with the code of conduct." }
+    ],
+    "tools": [],
+    "rubric": [
+      "Correctly computes total cost per vendor",
+      "Identifies Vendor A as lowest total cost ($1250 vs $1270 vs $1300)",
+      "Ignores the unrelated HR policy document"
+    ]
+  }
+]
