@@ -10,7 +10,7 @@ bridges the backend's list[dict] interface to the ml module's interface.
 
 Adapter contract:
     Backend pipeline calls:  prune(documents, question) -> list[dict]
-    ml module exposes:       prune_context(query, context_chunks) -> dict
+    ml module exposes:       embed() + score_chunks() from ml.embedder / ml.scorer
 
 The key interface difference:
     - Backend passes full dicts: [{"id": "doc1", "content": "..."}]
@@ -18,29 +18,17 @@ The key interface difference:
     - After scoring, we reconstruct full dicts by index so "id" is preserved
 
 Fallback behaviour (no ML available):
-    If sentence-transformers is not installed (e.g. during backend-only
-    development without the ml deps), the module falls back to keyword
-    overlap so the server still starts and /optimize still works.
+    If sentence-transformers is not installed (e.g. disk space issue or
+    backend-only dev environment), the module falls back to keyword overlap
+    so the server still starts and /optimize still works.
 """
 
 import logging
+import re
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
-
-# --------------------------------------------------------------------------
-# Attempt to import the ML module. Fall back gracefully if not installed.
-# --------------------------------------------------------------------------
-try:
-    from ml.embedder import embed
-    from ml.scorer import score_chunks, rank_chunks
-    _ML_AVAILABLE = True
-except ImportError:
-    _ML_AVAILABLE = False
-    logger.warning(
-        "[context_pruner] sentence-transformers not installed — "
-        "falling back to keyword overlap. "
-        "Run: pip install sentence-transformers"
-    )
 
 
 # --------------------------------------------------------------------------
@@ -57,34 +45,36 @@ def _prune_semantic(
     Score documents against the question using cosine similarity on
     sentence embeddings, then keep those above the threshold.
 
+    Imports ml.embedder and ml.scorer lazily so any ImportError is caught
+    by the caller and triggers the keyword fallback.
+
     Args:
         documents:  List of dicts with at least a "content" key.
         question:   The user's query string.
-        top_k:      Max documents to keep. -1 = no hard limit (use threshold only).
+        top_k:      Max documents to keep. -1 = no hard limit (threshold only).
         threshold:  Minimum cosine similarity to keep a document.
-                    0.1 is intentionally low — we want to discard clearly
-                    unrelated documents (score ~0.0) but keep anything that
-                    has even marginal relevance.
+                    0.1 is intentionally low — discard clearly unrelated docs
+                    but keep anything with marginal relevance.
 
     Returns:
         Filtered list of original dicts, ordered by relevance (best first).
         Always returns at least one document to avoid sending empty context.
     """
+    # Lazy import — keeps ImportError catchable at call time
+    from ml.embedder import embed
+    from ml.scorer import score_chunks
+
     contents = [doc.get("content", "") for doc in documents]
 
-    # Embed everything in one batch (efficient — single model forward pass)
+    # Embed everything in one batch (single model forward pass)
     query_vector = embed([question])[0]
     chunk_vectors = embed(contents)
 
     scores = score_chunks(query_vector, chunk_vectors)
-
-    # rank_chunks returns (text, score) pairs — we use the text to map back
-    # to original dicts by index rather than string equality (safer for
-    # documents with identical content snippets)
     score_list = scores.tolist()
-    indexed = sorted(
-        enumerate(score_list), key=lambda x: x[1], reverse=True
-    )
+
+    # Sort by score descending (index-based to preserve original dicts)
+    indexed = sorted(enumerate(score_list), key=lambda x: x[1], reverse=True)
 
     # Apply threshold filter
     kept = [(i, s) for i, s in indexed if s >= threshold]
@@ -98,7 +88,7 @@ def _prune_semantic(
         best_idx = max(range(len(score_list)), key=lambda i: score_list[i])
         kept = [(best_idx, score_list[best_idx])]
 
-    # Reconstruct original dicts in relevance order, preserving all keys
+    # Reconstruct original dicts in relevance order, all keys preserved
     result = [documents[i] for i, _ in kept]
 
     logger.debug(
@@ -111,8 +101,6 @@ def _prune_semantic(
 # --------------------------------------------------------------------------
 # Keyword-overlap fallback (used only when ml deps are missing)
 # --------------------------------------------------------------------------
-
-import re
 
 _STOPWORDS = {
     "the", "a", "an", "is", "are", "was", "were", "in", "on", "of", "to",
@@ -159,16 +147,14 @@ def prune(
     """
     Remove documents that are not semantically relevant to the question.
 
-    This is the function called by pipeline.py. It delegates to the
-    semantic (ML) implementation when available, and falls back to keyword
-    overlap otherwise.
+    Tries semantic (ML) pruning first. Falls back to keyword overlap if
+    sentence-transformers is not installed or fails for any reason.
 
     Args:
         documents:  List of dicts with "id" and "content" keys.
         question:   The user's query string.
         top_k:      Hard cap on number of documents returned. -1 = no cap.
-        threshold:  Minimum cosine similarity (semantic) or keyword overlap
-                    (fallback) to keep a document.
+        threshold:  Minimum cosine similarity to keep a document.
 
     Returns:
         Filtered list of document dicts, best matches first.
@@ -177,10 +163,20 @@ def prune(
         return documents
 
     if not question or not question.strip():
-        # No question to score against — return everything unchanged
         return documents
 
-    if _ML_AVAILABLE:
+    try:
         return _prune_semantic(documents, question, top_k=top_k, threshold=threshold)
-    else:
-        return _prune_keyword(documents, question, min_overlap=0.05)
+    except ImportError:
+        logger.warning(
+            "[context_pruner] sentence-transformers not available — "
+            "falling back to keyword overlap. "
+            "Run: pip install sentence-transformers"
+        )
+        return _prune_keyword(documents, question)
+    except Exception as exc:
+        logger.error(
+            "[context_pruner] semantic pruning failed (%s) — "
+            "falling back to keyword overlap.", exc
+        )
+        return _prune_keyword(documents, question)
