@@ -11,3 +11,8 @@ tiktoken>=0.8.0
 # for full semantic optimization.
 sentence-transformers==3.0.1
 numpy>=1.24,<2.0
+
+# Testing
+pytest>=8.0.0
+httpx>=0.27.0
+

@@ -19,12 +19,18 @@ router = APIRouter()
 # Shared helper
 # ---------------------------------------------------------------------------
 
+import time
+
+from app.services.cloudwatch import log_pipeline_execution
+
 def _run_optimize(
     question: str,
     conversation: list[dict],
     documents: list[dict],
     tools: list[dict],
 ) -> OptimizeResponse:
+    start_time = time.perf_counter()
+
     original_tokens = count_context_tokens(
         question=question,
         conversation=conversation,
@@ -47,9 +53,23 @@ def _run_optimize(
         tools=result.context.tools,
     )
 
+    latency_ms = int((time.perf_counter() - start_time) * 1000)
+    tokens_saved = max(0, original_tokens - optimized_tokens)
+
     reduction = 0.0
     if original_tokens > 0:
         reduction = round((1 - optimized_tokens / original_tokens) * 100, 2)
+
+    # Standard Claude 3.5 Sonnet pricing: $0.003 / 1k input tokens
+    cost_saved_est = round((tokens_saved / 1000.0) * 0.003, 6)
+
+    log_pipeline_execution(
+        endpoint="/api/v1/optimize",
+        original_tokens=original_tokens,
+        optimized_tokens=optimized_tokens,
+        reduction_percent=reduction,
+        latency_ms=latency_ms,
+    )
 
     return OptimizeResponse(
         optimized_context={
@@ -62,7 +82,11 @@ def _run_optimize(
         optimized_tokens=optimized_tokens,
         reduction_percent=reduction,
         steps_applied=result.steps_applied,
+        tokens_saved=tokens_saved,
+        optimization_latency_ms=latency_ms,
+        cost_saved_est=cost_saved_est,
     )
+
 
 
 # ---------------------------------------------------------------------------

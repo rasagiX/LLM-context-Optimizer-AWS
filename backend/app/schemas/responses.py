@@ -42,7 +42,11 @@ class OptimizeResponse(BaseModel):
     optimized_tokens: int
     reduction_percent: float
     steps_applied: list[str] = Field(default_factory=list)
+    tokens_saved: Optional[int] = None
+    optimization_latency_ms: Optional[int] = None
+    cost_saved_est: Optional[float] = None
 
 
 class EvaluateResponse(BaseModel):
     quality: QualityScore
+
