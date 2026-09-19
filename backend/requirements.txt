@@ -1,0 +1,13 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.9.0
+boto3>=1.35.0
+python-dotenv>=1.0.1
+tiktoken>=0.8.0
+
+# ML/NLP — required for semantic context pruning and near-duplicate detection
+# (ml/ package: embedder.py, context_pruner.py, deduplicator.py)
+# Falls back to keyword overlap gracefully if not installed, but install this
+# for full semantic optimization.
+sentence-transformers==3.0.1
+numpy>=1.24,<2.0

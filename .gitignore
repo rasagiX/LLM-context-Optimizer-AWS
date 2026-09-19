@@ -1,4 +1,4 @@
-# Logs
+# Node & Frontend
 logs
 *.log
 npm-debug.log*
@@ -16,17 +16,41 @@ dist-ssr
 .nitro
 *.local
 
-# Wrangler / Cloudflare
-.wrangler/
-.dev.vars
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# Virtual environments
+.venv/
+venv/
+env/
+
+# sentence-transformers model cache
+.cache/
+
+# Distribution / packaging
+build/
+*.egg-info/
+
+# Environment variables — never commit real credentials
+.env
+.env.local
+
+# IDE / editor / OS
+.vscode/
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.swp
+*.swo
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+

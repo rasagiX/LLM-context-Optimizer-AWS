@@ -1,0 +1,158 @@
+[
+  {
+    "id": "task_01",
+    "category": "document_qa",
+    "question": "What was the company's revenue growth in Q3?",
+    "conversation": [],
+    "documents": [
+      {
+        "id": "financials_q2q3",
+        "content": "Q2 revenue was $4,200,000. Q3 revenue was $5,100,000. Refunds in Q3 totaled $80,000 and are tracked separately. The marketing team spent $200,000 on Q3 campaigns unrelated to this calculation."
+      }
+    ],
+    "tools": [],
+    "rubric": [
+      "Uses Q2 revenue of 4,200,000",
+      "Uses Q3 revenue of 5,100,000",
+      "Calculates percentage growth correctly (~21.4%)",
+      "Does not invent values"
+    ]
+  },
+  {
+    "id": "task_02",
+    "category": "long_conversation",
+    "question": "Given everything we discussed, what deployment region did we settle on?",
+    "conversation": [
+      { "role": "user", "content": "We're building a new service, thinking about AWS." },
+      { "role": "assistant", "content": "Sure, what are your latency requirements?" },
+      { "role": "user", "content": "Most users are in Europe." },
+      { "role": "assistant", "content": "eu-west-1 or eu-central-1 would be good starting points." },
+      { "role": "user", "content": "We also need GDPR compliance for data residency." },
+      { "role": "assistant", "content": "Both regions are EU-based so that's fine." },
+      { "role": "user", "content": "Let's also talk about the database choice." },
+      { "role": "assistant", "content": "DynamoDB or Aurora Postgres are both solid." },
+      { "role": "user", "content": "We'll go with DynamoDB for the benchmark results table." },
+      { "role": "assistant", "content": "Good choice given the access patterns you described." },
+      { "role": "user", "content": "Okay, and after comparing eu-west-1 vs eu-central-1 latency for our test users, we picked eu-west-1." },
+      { "role": "assistant", "content": "Noted, eu-west-1 it is." }
+    ],
+    "documents": [],
+    "tools": [],
+    "rubric": [
+      "Answer is eu-west-1",
+      "Does not confuse it with eu-central-1",
+      "Does not invent a region not discussed"
+    ]
+  },
+  {
+    "id": "task_03",
+    "category": "coding",
+    "question": "Write a Python function that returns True if a string is a palindrome, ignoring case and spaces.",
+    "conversation": [],
+    "documents": [],
+    "tools": [],
+    "rubric": [
+      "Function correctly ignores case",
+      "Function correctly ignores spaces",
+      "Handles empty string",
+      "Code is syntactically valid Python"
+    ]
+  },
+  {
+    "id": "task_04",
+    "category": "tool_using_agent",
+    "question": "Check the weather in Paris and tell me if I should bring an umbrella.",
+    "conversation": [],
+    "documents": [],
+    "tools": [
+      { "name": "get_weather", "description": "Get current weather for a city.", "input_schema": { "city": "string" } },
+      { "name": "send_email", "description": "Send an email to a recipient.", "input_schema": { "to": "string", "body": "string" } },
+      { "name": "create_calendar_event", "description": "Create a calendar event.", "input_schema": { "title": "string", "time": "string" } },
+      { "name": "search_web", "description": "Search the web for a query.", "input_schema": { "query": "string" } },
+      { "name": "get_stock_price", "description": "Get the current stock price for a ticker.", "input_schema": { "ticker": "string" } }
+    ],
+    "rubric": [
+      "Uses get_weather tool concept correctly",
+      "Gives a clear umbrella recommendation",
+      "Does not fabricate weather data if none provided"
+    ]
+  },
+  {
+    "id": "task_05",
+    "category": "multi_document_qa",
+    "question": "Which vendor offered the lowest total cost including shipping?",
+    "conversation": [],
+    "documents": [
+      { "id": "vendor_a", "content": "Vendor A: unit price $12, shipping $50, minimum order 100 units." },
+      { "id": "vendor_b", "content": "Vendor B: unit price $11.50, shipping $120, minimum order 100 units." },
+      { "id": "vendor_c", "content": "Vendor C: unit price $13, shipping free, minimum order 100 units." },
+      { "id": "unrelated_hr_policy", "content": "Company HR policy: all vendors must be reviewed annually for compliance with the code of conduct." }
+    ],
+    "tools": [],
+    "rubric": [
+      "Correctly computes total cost per vendor",
+      "Identifies Vendor A as lowest total cost ($1250 vs $1270 vs $1300)",
+      "Ignores the unrelated HR policy document"
+    ]
+  },
+  {
+    "id": "task_06",
+    "category": "combined",
+    "question": "Based on our previous discussion and the provided documents, which cloud provider should we choose for the payments service, and what compliance certifications do we need?",
+    "conversation": [
+      { "role": "user", "content": "We need to pick a cloud provider for our new payments service." },
+      { "role": "assistant", "content": "What are your primary requirements?" },
+      { "role": "user", "content": "We process credit cards so we need PCI-DSS compliance." },
+      { "role": "assistant", "content": "All major cloud providers support PCI-DSS workloads." },
+      { "role": "user", "content": "We also have customers in the EU so GDPR data residency matters." },
+      { "role": "assistant", "content": "That limits you to providers with EU regions and data processing agreements." },
+      { "role": "user", "content": "Our engineering team has the most AWS experience." },
+      { "role": "assistant", "content": "AWS would be a natural fit given your team's familiarity." },
+      { "role": "user", "content": "Budget is tight — we want to avoid large upfront commitments." },
+      { "role": "assistant", "content": "AWS pay-as-you-go pricing suits that constraint well." },
+      { "role": "user", "content": "We also need SOC 2 Type II for our enterprise customers." },
+      { "role": "assistant", "content": "AWS is SOC 2 Type II certified across its core services." }
+    ],
+    "documents": [
+      {
+        "id": "aws_compliance",
+        "content": "AWS holds the following compliance certifications: PCI-DSS Level 1, SOC 2 Type II, ISO 27001, HIPAA eligible, GDPR data processing agreements available. AWS has data centres in eu-west-1 (Ireland) and eu-central-1 (Frankfurt) for EU data residency."
+      },
+      {
+        "id": "aws_pricing",
+        "content": "AWS offers pay-as-you-go pricing with no upfront commitment. Reserved instances provide up to 72% savings for predictable workloads. Free tier available for 12 months on most services."
+      },
+      {
+        "id": "gcp_compliance",
+        "content": "Google Cloud holds PCI-DSS, SOC 2 Type II, ISO 27001, and GDPR certifications. GCP has EU regions in europe-west1 (Belgium) and europe-west4 (Netherlands)."
+      },
+      {
+        "id": "unrelated_office_policy",
+        "content": "Office policy: all employees must badge in before 9am. The cafeteria closes at 2pm. Parking permits must be renewed annually."
+      },
+      {
+        "id": "unrelated_hr_benefits",
+        "content": "HR benefits update: the dental plan now covers orthodontics. Vision care reimbursement increased to $300 per year. 401k matching increased to 5%."
+      },
+      {
+        "id": "team_skills",
+        "content": "Engineering team certifications: 8 AWS Certified Solutions Architects, 2 GCP Professional Cloud Architects, 1 Azure Administrator. Most production experience is on AWS."
+      }
+    ],
+    "tools": [
+      { "name": "get_compliance_report", "description": "Fetch the latest compliance certification report for a cloud provider.", "input_schema": { "provider": "string" } },
+      { "name": "compare_pricing", "description": "Compare pricing between two cloud providers for a given workload.", "input_schema": { "provider_a": "string", "provider_b": "string", "workload": "string" } },
+      { "name": "send_email", "description": "Send an email to a recipient.", "input_schema": { "to": "string", "body": "string" } },
+      { "name": "book_meeting", "description": "Book a meeting with a team.", "input_schema": { "team": "string", "time": "string" } },
+      { "name": "order_lunch", "description": "Order lunch from the office cafeteria.", "input_schema": { "items": "array" } }
+    ],
+    "rubric": [
+      "Recommends AWS based on team experience and compliance requirements",
+      "Mentions PCI-DSS compliance",
+      "Mentions SOC 2 Type II certification",
+      "Mentions GDPR data residency support",
+      "Does not reference unrelated office policy or HR benefits documents",
+      "Does not recommend irrelevant tools (send_email, book_meeting, order_lunch)"
+    ]
+  }
+]
