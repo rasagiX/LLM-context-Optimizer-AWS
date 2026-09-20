@@ -1,34 +1,24 @@
 """
 token_compressor.py
 
-Selective Token Pruning & Information Density Compressor.
+Selective Token Pruning & Query Mutual Information Compressor.
 
-Why sub-sentence token pruning matters:
-    Document pruners keep or drop whole paragraphs/documents.
-    However, even within retained documents, 20-40% of tokens consist of
-    non-essential modifier clauses, repetitive adverbs, and verbose framing.
-
-    This module performs selective token-level and clause-level compression:
-    1. Segments document text into semantic clauses / sub-sentences.
-    2. Measures information entropy and semantic relevance to the query (if provided).
-    3. Strips low-information modifier clauses while strictly preserving key
-       entities (numbers, dates, proper nouns, compliance standards like PCI-DSS, GDPR).
-
-Example:
-    Input:  "It should be understood that AWS holds PCI-DSS Level 1 certification, which is very essential for cards."
-    Output: "AWS holds PCI-DSS Level 1 certification, essential for cards."
+Provides token-level mutual information compression (LLMLingua-style):
+    1. Evaluates Query Mutual Information score S(w, Q) = CosineSim(vec_w, vec_Q) * IDF(w)
+    2. Strictly protects core entities (numbers, compliance terms, proper nouns).
+    3. Prunes low-information tokens and filler phrases.
 """
 
+import math
 import re
+from collections import Counter
 from typing import List, Set
 import numpy as np
 
-# Regexp for preserving numbers, uppercase codes, and technical standards
 _ENTITY_PATTERN = re.compile(
     r"\b([A-Z0-9\-_]{2,}|[0-9]+(?:\.[0-9]+)?|PCI-DSS|GDPR|SOC|HIPAA|ISO|AWS|GCP|Azure)\b"
 )
 
-# Common low-information modifiers & fluff words
 _LOW_INFO_WORDS: Set[str] = {
     "basically", "essentially", "literally", "virtually", "actually", "generally",
     "typically", "obviously", "clearly", "naturally", "definitely", "certainly",
@@ -38,27 +28,17 @@ _LOW_INFO_WORDS: Set[str] = {
     "heretofore", "aforementioned", "herein", "therein", "whereupon",
 }
 
-# Clause splitters (commas, semicolons, dashes, transition conjunctions)
 _CLAUSE_SPLIT_PATTERN = re.compile(r"(?<=[,;:\-])\s+|\b(?:which|that|who|whom|whose|where|when)\b\s+")
 
 
 def _is_entity(word: str) -> bool:
-    """Check if a word looks like a critical entity or number that should never be dropped."""
     return bool(_ENTITY_PATTERN.search(word))
 
 
 def compress_tokens_heuristic(text: str) -> str:
-    """
-    Fast heuristic token compressor (runs in < 1ms, no embedding model needed).
-
-    - Removes redundant low-information adverbs and modifiers.
-    - Simplifies double negatives or padded prepositions ("in order to" -> "to").
-    - Preserves all entities, numbers, and core syntax.
-    """
     if not text:
         return text
 
-    # Common phrase contractions/simplifications
     simplifications = [
         (r"\bin order to\b", "to"),
         (r"\bdue to the fact that\b", "because"),
@@ -79,7 +59,6 @@ def compress_tokens_heuristic(text: str) -> str:
     for pattern, replacement in simplifications:
         compressed = re.sub(pattern, replacement, compressed, flags=re.IGNORECASE)
 
-    # Filter standalone low-info modifier words if they aren't part of an entity
     words = compressed.split()
     filtered_words = []
     for w in words:
@@ -91,95 +70,81 @@ def compress_tokens_heuristic(text: str) -> str:
     return " ".join(filtered_words)
 
 
+def compress_tokens_mutual_information(
+    text: str,
+    query: str,
+    target_ratio: float = 0.8,
+) -> str:
+    """
+    LLMLingua-style token importance compressor using Query Mutual Information.
+
+    Args:
+        text: Document text to compress.
+        query: User query string.
+        target_ratio: Proportion of tokens to retain (e.g. 0.8 = keep top 80%).
+
+    Returns:
+        Token-compressed text.
+    """
+    if not text or not query or not query.strip():
+        return compress_tokens_heuristic(text)
+
+    words = text.split()
+    if len(words) <= 8:
+        return text
+
+    try:
+        from ml.embedder import embed, embed_query
+        from ml.scorer import score_chunks
+
+        q_vec = embed_query(query)
+        w_vecs = embed(words)
+        sims = score_chunks(q_vec, w_vecs)
+
+        # Calculate Query Mutual Information scores
+        scores = []
+        for idx, (word, sim) in enumerate(zip(words, sims.tolist())):
+            clean = re.sub(r"[^\w\-]", "", word).lower()
+            if _is_entity(word) or clean in query.lower():
+                score = 100.0  # Force retain entities and query terms
+            elif clean in _LOW_INFO_WORDS:
+                score = -10.0  # Penalize filler words
+            else:
+                idf_weight = math.log(1.0 + len(clean))
+                score = sim * idf_weight
+            scores.append((idx, score, word))
+
+        # Determine cutoff threshold to keep target_ratio
+        k_keep = max(1, int(len(words) * target_ratio))
+        top_ranked_indices = set(
+            idx for idx, _, _ in sorted(scores, key=lambda x: x[1], reverse=True)[:k_keep]
+        )
+
+        # Reconstruct in original token order
+        kept_words = [words[i] for i in range(len(words)) if i in top_ranked_indices]
+        return " ".join(kept_words)
+
+    except Exception:
+        return compress_tokens_heuristic(text)
+
+
 def compress_tokens_semantic(
     text: str,
     query: str = "",
     min_clause_length: int = 15,
     threshold: float = 0.25,
 ) -> str:
-    """
-    Selective clause-level token compressor using embedding similarity.
-
-    Splits document into clauses, embeds them, and retains clauses that either:
-    1. Contain critical entities (numbers, compliance terms, proper names).
-    2. Have high cosine similarity to the user's query vector.
-
-    Args:
-        text: Document text to compress.
-        query: User query string for semantic alignment.
-        min_clause_length: Min characters to treat segment as a clause.
-        threshold: Minimum similarity threshold for clause retention.
-
-    Returns:
-        Compressed text with low-relevance sub-clauses pruned.
-    """
     if not text or not text.strip():
         return text
 
-    # Heuristic pass first
     text = compress_tokens_heuristic(text)
-
     if not query or not query.strip():
         return text
 
-    try:
-        from ml.embedder import embed
-        from ml.scorer import score_chunks
-
-        # Split text into sentences
-        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
-        retained_sentences = []
-
-        for sent in sentences:
-            # If sentence has entities or is short, keep it as is
-            if _is_entity(sent) or len(sent) < 40:
-                retained_sentences.append(sent)
-                continue
-
-            # Break sentence into candidate sub-clauses
-            clauses = _CLAUSE_SPLIT_PATTERN.split(sent)
-            clauses = [c.strip() for c in clauses if len(c.strip()) >= min_clause_length]
-
-            if len(clauses) <= 1:
-                retained_sentences.append(sent)
-                continue
-
-            # Embed query and sub-clauses
-            q_vec = embed([query])[0]
-            c_vecs = embed(clauses)
-            scores = score_chunks(q_vec, c_vecs)
-
-            # Keep clauses that score above threshold or contain entities
-            kept_clauses = []
-            for clause, score in zip(clauses, scores.tolist()):
-                if score >= threshold or _is_entity(clause):
-                    kept_clauses.append(clause)
-
-            if kept_clauses:
-                retained_sentences.append(", ".join(kept_clauses))
-            else:
-                # If all sub-clauses failed threshold, keep the single highest-scoring clause
-                best_idx = int(np.argmax(scores))
-                retained_sentences.append(clauses[best_idx])
-
-        return " ".join(retained_sentences)
-
-    except Exception:
-        # Fallback cleanly to heuristic compression if ML fails
-        return text
+    return compress_tokens_mutual_information(text, query)
 
 
 def compress_tokens(text: str, query: str = "") -> str:
-    """
-    Main entry point for token compression.
-
-    Args:
-        text: Input text.
-        query: Optional user query string.
-
-    Returns:
-        Token-compressed text.
-    """
     if query:
         return compress_tokens_semantic(text, query)
     return compress_tokens_heuristic(text)

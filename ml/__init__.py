@@ -15,6 +15,10 @@ Public interface — everything the backend needs is importable from here:
         from ml import rerank_chunks
         from ml import compress_tokens
 
+    Tool & Schema Minification:
+        from ml import minify_tools
+        from ml import minify_tool_to_ts
+
     Evaluation & ML Metrics:
         from ml import calculate_semantic_preservation
         from ml import evaluate_optimization
@@ -24,16 +28,17 @@ Public interface — everything the backend needs is importable from here:
         from ml import embed_query_async
 
     Token accounting:
-        from ml import token_reduction_stats
+        from ml import count_tokens, token_reduction_stats
 """
 
 from ml.pruner import prune_context, prune_context_from_text
 from ml.deduplicator import deduplicate_by_embedding, deduplicate_texts
 from ml.embedder import embed_async, embed_query_async
-from ml.utils import token_reduction_stats
+from ml.utils import count_tokens, token_reduction_stats
 from ml.token_compressor import compress_tokens
 from ml.reranker import rerank_chunks
 from ml.evaluator import calculate_semantic_preservation, evaluate_optimization
+from ml.schema_minifier import minify_tools, minify_tool_to_ts
 
 __all__ = [
     # pruning
@@ -45,6 +50,9 @@ __all__ = [
     # reranking & token compression
     "rerank_chunks",
     "compress_tokens",
+    # schema minification
+    "minify_tools",
+    "minify_tool_to_ts",
     # evaluation
     "calculate_semantic_preservation",
     "evaluate_optimization",
@@ -52,5 +60,6 @@ __all__ = [
     "embed_async",
     "embed_query_async",
     # token accounting
+    "count_tokens",
     "token_reduction_stats",
 ]

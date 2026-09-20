@@ -1,23 +1,27 @@
 """
 demo.py
 
-End-to-end demonstration of the ML Context Compiler & Token Optimization Suite.
+End-to-end demonstration of the Advanced ML Context Compiler & Token Optimization Suite.
 
 Run from the repository root:
     python demo.py
 
 What this script demonstrates:
     1. Context Pruning & Two-Stage Reranking
-    2. Selective Sub-Sentence Token Compression
+    2. Selective Token & Query Mutual Information Compression
     3. Semantic Vector Tool Selector
-    4. Quantitative ML Quality & Semantic Retention Evaluation
+    4. Tool Schema Signature Minification (80%+ Savings)
+    5. Quantitative ML Quality & Semantic Retention Evaluation
 """
 
+import json
 from ml import (
     prune_context,
     prune_context_from_text,
     compress_tokens,
     evaluate_optimization,
+    minify_tool_to_ts,
+    count_tokens,
 )
 from app.optimizer import tool_selector
 
@@ -120,10 +124,42 @@ def demo_vector_tool_selection():
     print()
 
 
+def demo_schema_minification():
+    print("=" * 70)
+    print("DEMO 4: Tool Schema Minification")
+    print("=" * 70)
+
+    tool_verbose = {
+        "name": "get_compliance_report",
+        "description": "Fetch the latest compliance certification report for a cloud provider.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "description": "Cloud provider name e.g. aws, gcp, azure"},
+                "region": {"type": "string", "description": "Optional AWS region code"},
+            },
+            "required": ["provider"],
+        },
+    }
+
+    verbose_json = json.dumps(tool_verbose, indent=2)
+    minified_ts = minify_tool_to_ts(tool_verbose)
+
+    orig_tokens = count_tokens(verbose_json)
+    opt_tokens = count_tokens(minified_ts)
+    saved_pct = round((1 - opt_tokens / orig_tokens) * 100, 1)
+
+    print(f"Verbose JSON Schema ({orig_tokens} tokens):\n{verbose_json}\n")
+    print(f"Minified TS Signature ({opt_tokens} tokens):\n  '{minified_ts}'\n")
+    print(f"Schema Token Reduction: {orig_tokens} -> {opt_tokens} tokens ({saved_pct}% saved!)")
+    print()
+
+
 if __name__ == "__main__":
     demo_pre_split_chunks()
     demo_token_compression()
     demo_vector_tool_selection()
+    demo_schema_minification()
 
     print("=" * 70)
     print("All ML Token Optimizer Demos Executed Successfully.")

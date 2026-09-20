@@ -75,7 +75,7 @@ def run(ctx: OptimizerContext) -> OptimizerResult:
     if ctx.tools != original_tools:
         steps_applied.append("tool_selector")
 
-    # Step 5 — Selective Prompt & Token compression
+    # Step 5 — Selective Prompt & Mutual Information Token compression
     compressed_docs = [
         {**doc, "content": prompt_compressor.compress(doc.get("content", ""), question=ctx.question)}
         for doc in ctx.documents
@@ -83,6 +83,22 @@ def run(ctx: OptimizerContext) -> OptimizerResult:
     if compressed_docs != ctx.documents:
         steps_applied.append("prompt_compressor")
     ctx.documents = compressed_docs
+
+    # Step 6 — Tool Schema Minification
+    if ctx.tools:
+        try:
+            from ml.schema_minifier import minify_tool_to_ts
+            minified_tools = []
+            for t in ctx.tools:
+                if isinstance(t, dict):
+                    minified_tools.append({"name": t.get("name"), "signature": minify_tool_to_ts(t)})
+                else:
+                    minified_tools.append(t)
+            ctx.tools = minified_tools
+            if "schema_minifier" not in steps_applied:
+                steps_applied.append("schema_minifier")
+        except Exception as exc:
+            logger.debug("[pipeline] Schema minification skipped: %s", exc)
 
     # Compute Semantic Preservation Score
     optimized_text = _build_full_context_string(ctx)
