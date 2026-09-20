@@ -5,12 +5,12 @@ Single entry point for all LLM calls in the application.
 The rest of the app imports from here; no other file talks to the
 LLM provider SDK directly.
 
-To swap providers in future, only this file needs to change.
+Uses the current google-genai SDK (replaces deprecated google-generativeai).
 
 Environment variables:
   GEMINI_API_KEY   — required. Get one free at https://aistudio.google.com/app/apikey
-  LLM_MODEL        — optional. Defaults to gemini-1.5-flash (fast + free tier).
-                     Other options: gemini-1.5-pro, gemini-2.0-flash-exp
+  LLM_MODEL        — optional. Defaults to gemini-2.0-flash (fast + free tier).
+                     Other options: gemini-1.5-flash, gemini-1.5-pro, gemini-2.5-flash-preview-05-20
 """
 
 import logging
@@ -18,7 +18,8 @@ import os
 import time
 from dataclasses import dataclass
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -27,30 +28,28 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-MODEL_NAME: str = os.getenv("LLM_MODEL", "gemini-1.5-flash")
+MODEL_NAME: str = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+
+# Module-level client — created once when API key is available
+_client: genai.Client | None = None
 
 if _API_KEY:
     try:
-        genai.configure(api_key=_API_KEY)
+        _client = genai.Client(api_key=_API_KEY)
     except Exception as exc:
-        logger.warning("[llm] Failed to configure Gemini API: %s", exc)
+        logger.warning("[llm] Failed to initialise Gemini client: %s", exc)
 
 # ---------------------------------------------------------------------------
 # Per-model pricing table (USD per 1 000 tokens).
-# Gemini free tier has no cost; paid tier rates listed for reference.
 # Prices sourced from https://ai.google.dev/pricing
 # ---------------------------------------------------------------------------
 _PRICING: dict[str, dict[str, float]] = {
-    # Gemini 1.5 Flash — free tier up to 15 RPM / 1M TPM
-    "gemini-1.5-flash":         {"input": 0.000075, "output": 0.0003},
-    "gemini-1.5-flash-8b":      {"input": 0.0000375, "output": 0.00015},
-    # Gemini 1.5 Pro
-    "gemini-1.5-pro":           {"input": 0.00125, "output": 0.005},
-    # Gemini 2.0 Flash
-    "gemini-2.0-flash-exp":     {"input": 0.0, "output": 0.0},  # free experimental
-    "gemini-2.0-flash":         {"input": 0.0001, "output": 0.0004},
-    # Gemini 2.5 Flash
-    "gemini-2.5-flash-preview-05-20": {"input": 0.0, "output": 0.0},
+    "gemini-2.0-flash":                    {"input": 0.0001,   "output": 0.0004},
+    "gemini-2.0-flash-exp":                {"input": 0.0,      "output": 0.0},
+    "gemini-2.5-flash-preview-05-20":      {"input": 0.0,      "output": 0.0},
+    "gemini-1.5-flash":                    {"input": 0.000075, "output": 0.0003},
+    "gemini-1.5-flash-8b":                 {"input": 0.0000375,"output": 0.00015},
+    "gemini-1.5-pro":                      {"input": 0.00125,  "output": 0.005},
 }
 
 
@@ -61,8 +60,7 @@ def calculate_cost(input_tokens: int, output_tokens: int, model: str = MODEL_NAM
 
 
 # ---------------------------------------------------------------------------
-# Response dataclass — identical shape to the old LLMResponse so callers
-# require zero changes.
+# Response / error dataclasses
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -74,10 +72,6 @@ class LLMResponse:
     cost: float = 0.0
 
 
-# ---------------------------------------------------------------------------
-# Error class — replaces BedrockError, same interface (status_code attribute)
-# ---------------------------------------------------------------------------
-
 class LLMError(Exception):
     """Wraps provider errors for clean HTTP translation in the API layer."""
 
@@ -87,7 +81,7 @@ class LLMError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Core invoke function — identical signature to the old bedrock.invoke()
+# Mock fallback — used when GEMINI_API_KEY is not set or API call fails
 # ---------------------------------------------------------------------------
 
 def _mock_invoke(prompt: str, system: str | None = None) -> LLMResponse:
@@ -99,26 +93,29 @@ def _mock_invoke(prompt: str, system: str | None = None) -> LLMResponse:
         text = (
             '{\n'
             '  "score": 9.5,\n'
-            '  "rationale": "[Local Mock Judge] The answer accurately addresses all criteria present in the provided context.",\n'
-            '  "rubric_hits": ["PCI-DSS Level 1 compliance confirmed", "GDPR EU data residency supported"],\n'
+            '  "rationale": "[Local Mock Judge] The answer accurately addresses all criteria.",\n'
+            '  "rubric_hits": ["All criteria satisfied"],\n'
             '  "rubric_misses": []\n'
             '}'
         )
     else:
         text = (
-            "[Local LLM Response] Based on the provided context, AWS is recommended as it satisfies PCI-DSS Level 1, "
-            "GDPR data residency in EU regions (Ireland and Frankfurt), and SOC 2 Type II compliance."
+            "[Local Mock Response] This is a mock LLM response. "
+            "Set GEMINI_API_KEY in your .env file to get real responses."
         )
 
-    cost = calculate_cost(mock_input_tokens, mock_output_tokens)
     return LLMResponse(
         text=text,
         input_tokens=mock_input_tokens,
         output_tokens=mock_output_tokens,
         latency_ms=50,
-        cost=cost,
+        cost=calculate_cost(mock_input_tokens, mock_output_tokens),
     )
 
+
+# ---------------------------------------------------------------------------
+# Core invoke function
+# ---------------------------------------------------------------------------
 
 def invoke(
     prompt: str,
@@ -126,40 +123,53 @@ def invoke(
     max_tokens: int = 1024,
     temperature: float = 0.0,
 ) -> LLMResponse:
-    if not _API_KEY:
+    """
+    Send a single-turn prompt to the configured Gemini model and return
+    the answer plus token/latency/cost metrics.
+
+    Falls back to _mock_invoke() if no API key is set or the call fails.
+    Raises LLMError only on hard auth failures so callers can return HTTP 403.
+    """
+    if not _client:
         return _mock_invoke(prompt, system)
 
+    config = types.GenerateContentConfig(
+        max_output_tokens=max_tokens,
+        temperature=temperature,
+        system_instruction=system,
+    )
+
     try:
-        generation_config = genai.types.GenerationConfig(
-            max_output_tokens=max_tokens,
-            temperature=temperature,
-        )
-
-        model_kwargs: dict = {
-            "model_name": MODEL_NAME,
-            "generation_config": generation_config,
-        }
-        if system:
-            model_kwargs["system_instruction"] = system
-
-        model = genai.GenerativeModel(**model_kwargs)
-
         start = time.perf_counter()
-        response = model.generate_content(prompt)
+        response = _client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=config,
+        )
         latency_ms = int((time.perf_counter() - start) * 1000)
 
     except Exception as exc:
-        logger.warning("[llm] Gemini API call failed (%s) — using local mock response", exc)
+        msg = str(exc).lower()
+        if "api_key" in msg or "permission" in msg or "unauthorized" in msg or "403" in msg:
+            raise LLMError(
+                f"LLM authentication error — check GEMINI_API_KEY: {exc}",
+                status_code=403,
+            ) from exc
+        if "quota" in msg or "rate" in msg or "resource_exhausted" in msg or "429" in msg:
+            raise LLMError(
+                f"LLM rate limit / quota exceeded — retry later: {exc}",
+                status_code=429,
+            ) from exc
+        logger.warning("[llm] Gemini API call failed (%s) — using mock response", exc)
         return _mock_invoke(prompt, system)
 
     # Extract text
     try:
-        text = response.text
+        text = response.text or ""
     except Exception:
-        # response.text raises if the response was blocked by safety filters
         text = ""
 
-    # Token usage — Gemini returns usage_metadata on the response object
+    # Token usage
     usage = getattr(response, "usage_metadata", None)
     input_tokens = getattr(usage, "prompt_token_count", 0) or 0
     output_tokens = getattr(usage, "candidates_token_count", 0) or 0
