@@ -1,39 +1,29 @@
 """
 Conversation History Compressor.
 
-Keeps the most recent K turns verbatim and collapses everything older
-into a structured summary message that preserves:
-    - The user's original goal (first user message)
-    - All distinct facts stated by the user across older turns
-    - Key decisions or conclusions mentioned
-    - How many turns were compressed
-
-This is a heuristic implementation — it extracts information from the
-text of older messages without calling an LLM. It's conservative: it
-never silently drops content, it encodes it into the summary message.
-
-For a future LLM-based upgrade, replace the _extract_facts() function
-with a Bedrock summarization call. The rest of the module stays the same.
+Keeps the most recent K turns verbatim and summarizes older turns into a
+structured system message using LLM or fact-extraction heuristics.
 """
 
+import logging
 import re
 
-RECENT_TURNS_KEPT = 6
+logger = logging.getLogger(__name__)
 
-# Sentence endings we split on when extracting facts
+RECENT_TURNS_KEPT = 6
 _SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
+
+_SUMMARY_SYSTEM_PROMPT = """You are a conversation summarizer for an AI assistant.
+Produce a concise structured summary in this exact format (no other text):
+
+USER GOAL: <one sentence stating what the user is trying to accomplish>
+KEY FACTS: <comma-separated list of the most important facts or decisions established>
+CONSTRAINTS: <comma-separated list of constraints or requirements mentioned, or "none">
+
+Keep the summary under 120 words. Do not invent facts not present in the conversation."""
 
 
 def _extract_facts(messages: list[dict]) -> list[str]:
-    """
-    Pull meaningful statements out of a list of conversation messages.
-
-    Strategy:
-        - Collect all user-role messages (users state facts/requirements)
-        - Split into sentences, filter short/filler ones
-        - Deduplicate by lowercased content
-        - Return up to 10 most informative sentences (longest = most content)
-    """
     sentences: list[str] = []
     seen: set[str] = set()
 
@@ -43,62 +33,59 @@ def _extract_facts(messages: list[dict]) -> list[str]:
         content = msg.get("content", "").strip()
         if not content:
             continue
-        # Split into sentences
         for sent in _SENTENCE_END.split(content):
             sent = sent.strip()
-            key  = sent.lower()
-            # Skip very short fragments and already-seen content
+            key = sent.lower()
             if len(sent) < 15 or key in seen:
                 continue
             seen.add(key)
             sentences.append(sent)
 
-    # Return the 10 longest sentences — longer = more information-dense
     sentences.sort(key=len, reverse=True)
     return sentences[:10]
 
 
+def _llm_summarize(turns: list[dict]) -> str:
+    from app.services.bedrock import invoke  # noqa: PLC0415
+
+    convo_text = "\n".join(
+        f"{m.get('role', 'user').upper()}: {m.get('content', '')}" for m in turns
+    )
+    prompt = f"Summarize the following conversation turns:\n\n{convo_text}"
+    result = invoke(prompt=prompt, system=_SUMMARY_SYSTEM_PROMPT, max_tokens=200, temperature=0.0)
+    return result.text.strip()
+
+
+def _heuristic_summary(turns: list[dict], num_turns: int) -> str:
+    facts = _extract_facts(turns)
+    first_user = next((m["content"][:200] for m in turns if m.get("role") == "user"), "")
+    summary_parts = [
+        f"Original goal: {first_user}",
+    ]
+    if facts:
+        summary_parts.append(f"Key facts: {' | '.join(facts)}")
+    return "\n".join(summary_parts)
+
+
 def compress(conversation: list[dict], question: str) -> list[dict]:
     """
-    Compress older conversation turns into a single structured summary.
-
-    Args:
-        conversation: Full conversation history as list of role/content dicts.
-        question:     The current user question (used for context, not modified).
-
-    Returns:
-        Compressed conversation: one summary system message + last K turns.
-        Returns the original list unchanged if it's within the kept limit.
+    Return a compressed conversation list.
     """
     if len(conversation) <= RECENT_TURNS_KEPT:
         return conversation
 
-    older  = conversation[:-RECENT_TURNS_KEPT]
+    older = conversation[:-RECENT_TURNS_KEPT]
     recent = conversation[-RECENT_TURNS_KEPT:]
 
-    facts = _extract_facts(older)
+    try:
+        summary_text = _llm_summarize(older)
+    except Exception as exc:
+        logger.debug("[history_compressor] LLM summarization unavailable (%s) — using fact heuristic", exc)
+        summary_text = _heuristic_summary(older, len(older))
 
-    # Build the summary content
-    first_user = next(
-        (m["content"][:200] for m in older if m.get("role") == "user"), ""
-    )
-
-    summary_parts = [
-        f"[Conversation summary — {len(older)} earlier turns compressed]",
-        f"Original goal: {first_user}",
-    ]
-
-    if facts:
-        facts_text = " | ".join(facts)
-        summary_parts.append(f"Key facts from earlier turns: {facts_text}")
-
-    summary_parts.append(
-        f"(Full context compressed by Context Compiler to save tokens)"
-    )
-
-    summary = {
-        "role":    "system",
-        "content": "\n".join(summary_parts),
+    summary_message = {
+        "role": "system",
+        "content": f"[Conversation summary — {len(older)} earlier turns compressed]\n{summary_text}",
     }
 
-    return [summary] + recent
+    return [summary_message] + recent

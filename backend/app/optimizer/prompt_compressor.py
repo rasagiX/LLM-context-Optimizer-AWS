@@ -1,15 +1,11 @@
 """
 Prompt Compressor.
 
-Reduces token count in document content without changing meaning.
-Uses three stages:
-    Stage 1 — Filler phrase removal: strips verbose phrases that add words
-              but no information ("please note that", "it is worth mentioning
-              that", etc.).
-    Stage 2 — Selective ML token compression: sub-sentence information entropy
-              pruning and phrase simplification (via ml.token_compressor).
-    Stage 3 — Whitespace normalisation: collapses repeated spaces, tabs,
-              and blank lines.
+Multi-stage compression that removes token waste without changing semantic meaning:
+    Stage 1 — Filler phrase removal & preamble removal
+    Stage 2 — Selective ML token & clause compression (via ml.token_compressor)
+    Stage 3 — Sentence-level deduplication
+    Stage 4 — Whitespace normalisation
 """
 
 import logging
@@ -18,55 +14,49 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Stage 1 — Filler phrase patterns
-# ---------------------------------------------------------------------------
-
-_FILLER_PATTERNS: List[str] = [
-    # Redundant openers
+_FILLER_PATTERNS: list[str] = [
     r"\bplease note that\b",
-    r"\bit is important to (note|mention|highlight|emphasize|point out) that\b",
+    r"\bit is important to (?:note|mention|remember|highlight|emphasize|point out) that\b",
+    r"\bas (?:mentioned|stated|noted|described|outlined|discussed) (?:above|earlier|before|previously|below)\b",
+    r"\bfor your (?:information|reference|convenience)\b",
     r"\bit should be noted that\b",
-    r"\bit is worth (noting|mentioning|highlighting) that\b",
-    r"\bkindly note that\b",
-    r"\bplease be aware that\b",
-    r"\bplease be advised that\b",
-    # Redundant back-references
-    r"\bas (mentioned|stated|noted|described|outlined|discussed) (above|earlier|before|previously|below)\b",
-    r"\bas (we|I) (mentioned|stated|noted|discussed) (earlier|before|previously|above)\b",
-    r"\bas previously (mentioned|stated|noted|discussed)\b",
-    r"\bfor (your|the) (reference|information|convenience)\b",
-    r"\bfor (your|the) (reference|information|convenience),?\s*",
-    # Empty transitional padding
-    r"\bit goes without saying that\b",
-    r"\bneedless to say,?\s*",
-    r"\bobviously,?\s*",
-    r"\bof course,?\s*",
-    r"\bclearly,?\s*",
-    r"\bbasically,?\s*",
-    r"\bessentially,?\s*",
-    r"\bin (simple|plain|other) words,?\s*",
-    r"\bto (put it simply|be (clear|honest|frank)),?\s*",
-    # Verbose sign-offs
-    r"\bI hope this (helps|clarifies|answers your question)\b[.!]*",
-    r"\bplease (let me know|feel free to reach out|don't hesitate to ask)[^.]*\.",
-    r"\bif you have any (further |more |additional )?(questions|concerns|queries)[^.]*\.",
+    r"\bkindly (?:note|be aware) that\b",
+    r"\bi would like to (?:note|mention|point out) that\b",
+    r"\bfeel free to\b",
+    r"\bdon't hesitate to\b",
+    r"\bthank you for (?:your patience|reading|your time)\b",
+    r"\bin (?:summary|conclusion|closing),?\s",
+    r"\bto summarize,?\s",
+    r"\bto conclude,?\s",
 ]
 
-_COMPILED_PATTERNS = [
-    re.compile(p, re.IGNORECASE) for p in _FILLER_PATTERNS
+_PREAMBLE_PATTERNS: list[str] = [
+    r"^(?:This document|This section|This article|The following) (?:provides|describes|contains|outlines|explains|covers) [^.]+\.\s*",
+    r"^(?:Below|The following) (?:is|are) [^:]+:\s*",
+    r"^(?:Overview|Introduction|Background|Preamble):\s*",
 ]
 
+_LIST_PREAMBLE_PATTERNS: list[str] = [
+    r"(?:Here is|Here are|The following is|The following are) (?:a list of|an overview of|a summary of)\s+",
+    r"(?:Please find|You can find) (?:below|above|here) (?:a list of|the list of|an overview of)\s+",
+]
 
-def _remove_fillers(text: str) -> str:
-    for pattern in _COMPILED_PATTERNS:
-        text = pattern.sub("", text)
-    return text
+_FILLER_RE = [re.compile(p, re.IGNORECASE) for p in _FILLER_PATTERNS]
+_PREAMBLE_RE = [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in _PREAMBLE_PATTERNS]
+_LIST_RE = [re.compile(p, re.IGNORECASE) for p in _LIST_PREAMBLE_PATTERNS]
 
 
-# ---------------------------------------------------------------------------
-# Stage 2 — Selective ML token compression
-# ---------------------------------------------------------------------------
+def _remove_duplicate_sentences(text: str) -> str:
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    seen: set[str] = set()
+    unique: list[str] = []
+    for s in sentences:
+        normalised = " ".join(s.split()).lower()
+        if normalised and normalised not in seen:
+            seen.add(normalised)
+            unique.append(s)
+    return " ".join(unique)
+
 
 def _compress_tokens(text: str, question: str = "") -> str:
     try:
@@ -77,41 +67,31 @@ def _compress_tokens(text: str, question: str = "") -> str:
         return text
 
 
-# ---------------------------------------------------------------------------
-# Stage 3 — Whitespace normalisation
-# ---------------------------------------------------------------------------
-
-def _normalise_whitespace(text: str) -> str:
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    text = re.sub(r" +\n", "\n", text)
-    return text.strip()
-
-
-# ---------------------------------------------------------------------------
-# Public interface
-# ---------------------------------------------------------------------------
-
 def compress(text: str, question: str = "") -> str:
     """
-    Reduce token count in a document string without changing its meaning.
-
-    Stages:
-        1. Strip filler phrases
-        2. ML selective token compression
-        3. Normalise whitespace
-
-    Args:
-        text: Document content string.
-        question: Optional user question for semantic alignment.
-
-    Returns:
-        Compressed string.
+    Return a compressed version of text with filler, preambles, and
+    redundant whitespace removed.
     """
-    if not text:
+    if not text or not text.strip():
         return text
 
-    text = _remove_fillers(text)
-    text = _compress_tokens(text, question=question)
-    text = _normalise_whitespace(text)
-    return text
+    compressed = text
+
+    for pattern in _FILLER_RE:
+        compressed = pattern.sub("", compressed)
+
+    for pattern in _PREAMBLE_RE:
+        compressed = pattern.sub("", compressed)
+
+    for pattern in _LIST_RE:
+        compressed = pattern.sub("", compressed)
+
+    compressed = _compress_tokens(compressed, question=question)
+    compressed = _remove_duplicate_sentences(compressed)
+
+    compressed = re.sub(r"[ \t]+", " ", compressed)
+    compressed = re.sub(r"\n{3,}", "\n\n", compressed)
+    compressed = re.sub(r" \n", "\n", compressed)
+    compressed = re.sub(r"\n ", "\n", compressed)
+
+    return compressed.strip()

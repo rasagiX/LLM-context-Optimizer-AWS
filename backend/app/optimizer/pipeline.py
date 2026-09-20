@@ -1,11 +1,11 @@
 """
 Context Compiler pipeline.
 
-Runs the individual optimizer steps in sequence and returns the reduced
-context plus a record of which steps actually changed something and the
-semantic preservation score.
+Runs individual optimizer steps in sequence and returns the reduced
+context plus a record of applied steps and the semantic preservation score.
 """
 
+import copy
 from dataclasses import dataclass, field
 import logging
 
@@ -47,46 +47,44 @@ def _build_full_context_string(ctx: OptimizerContext) -> str:
 
 
 def run(ctx: OptimizerContext) -> OptimizerResult:
-    # Capture raw original text representation for ML evaluation
+    ctx = copy.deepcopy(ctx)
     original_text = _build_full_context_string(ctx)
-
     steps_applied: list[str] = []
 
     # Step 1 — History compression
-    original_convo_len = len(ctx.conversation)
+    original_convo = ctx.conversation
     ctx.conversation = history_compressor.compress(ctx.conversation, ctx.question)
-    if len(ctx.conversation) != original_convo_len:
+    if ctx.conversation != original_convo:
         steps_applied.append("history_compressor")
 
-    # Step 2 — Exact + near-duplicate deduplication
-    original_doc_count = len(ctx.documents)
+    # Step 2 — Deduplication
+    original_docs = ctx.documents
     ctx.documents = deduplicator.dedupe(ctx.documents)
-    if len(ctx.documents) != original_doc_count:
+    if ctx.documents != original_docs:
         steps_applied.append("deduplicator")
 
-    # Step 3 — Semantic context pruning
-    pre_prune_count = len(ctx.documents)
-    ctx.documents = context_pruner.prune(ctx.documents, ctx.question)
-    if len(ctx.documents) != pre_prune_count:
+    # Step 3 — Context pruning
+    pruned_docs = context_pruner.prune(ctx.documents, ctx.question)
+    if pruned_docs != ctx.documents:
         steps_applied.append("context_pruner")
+    ctx.documents = pruned_docs
 
     # Step 4 — Vector Tool selection
-    original_tool_count = len(ctx.tools)
+    original_tools = ctx.tools
     ctx.tools = tool_selector.select(ctx.tools, ctx.question)
-    if len(ctx.tools) != original_tool_count:
+    if ctx.tools != original_tools:
         steps_applied.append("tool_selector")
 
     # Step 5 — Selective Prompt & Token compression
-    original_contents = [doc.get("content", "") for doc in ctx.documents]
-    ctx.documents = [
+    compressed_docs = [
         {**doc, "content": prompt_compressor.compress(doc.get("content", ""), question=ctx.question)}
         for doc in ctx.documents
     ]
-    compressed_contents = [doc.get("content", "") for doc in ctx.documents]
-    if compressed_contents != original_contents:
+    if compressed_docs != ctx.documents:
         steps_applied.append("prompt_compressor")
+    ctx.documents = compressed_docs
 
-    # Compute Semantic Preservation Score via ml.evaluator
+    # Compute Semantic Preservation Score
     optimized_text = _build_full_context_string(ctx)
     semantic_score = 1.0
     try:

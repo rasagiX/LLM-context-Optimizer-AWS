@@ -154,5 +154,111 @@
       "Does not reference unrelated office policy or HR benefits documents",
       "Does not recommend irrelevant tools (send_email, book_meeting, order_lunch)"
     ]
+  },
+  {
+    "id": "task_07",
+    "category": "data_analysis",
+    "question": "Which product had the highest profit margin and what was it?",
+    "conversation": [],
+    "documents": [
+      {
+        "id": "sales_report",
+        "content": "Product A: revenue $50,000, cost of goods $30,000. Product B: revenue $80,000, cost of goods $65,000. Product C: revenue $20,000, cost of goods $8,000. Product D: revenue $120,000, cost of goods $100,000. Note: marketing costs are excluded from COGS in this report."
+      },
+      {
+        "id": "unrelated_hr_memo",
+        "content": "HR memo: Q3 performance reviews are due by the end of the month. Please submit your self-assessments via the HR portal."
+      }
+    ],
+    "tools": [],
+    "rubric": [
+      "Calculates margin for all four products",
+      "Identifies Product C as highest margin (60%)",
+      "Shows correct margin calculation: (revenue - COGS) / revenue",
+      "Ignores the unrelated HR memo"
+    ]
+  },
+  {
+    "id": "task_08",
+    "category": "customer_support",
+    "question": "My order #ORD-4821 hasn't arrived and it's been 12 days. What should I do?",
+    "conversation": [],
+    "documents": [
+      {
+        "id": "shipping_policy",
+        "content": "Standard shipping takes 5-7 business days. Express shipping takes 2-3 business days. If your order has not arrived within 10 business days of the estimated delivery date, you are eligible for a full refund or free re-shipment. To initiate a claim, contact support@example.com with your order number. Orders cannot be cancelled after they have shipped."
+      },
+      {
+        "id": "returns_policy",
+        "content": "Items can be returned within 30 days of delivery for a full refund. Items must be unused and in original packaging. Return shipping is free for defective items. For non-defective returns, a $5 restocking fee applies."
+      },
+      {
+        "id": "faq_passwords",
+        "content": "FAQ: How do I reset my password? Visit the login page and click 'Forgot Password'. An email will be sent to your registered address with a reset link valid for 24 hours."
+      }
+    ],
+    "tools": [],
+    "rubric": [
+      "Correctly identifies that 12 days exceeds the 10 business day threshold",
+      "Advises customer to contact support@example.com",
+      "Mentions both refund and re-shipment as options",
+      "Includes the order number in the recommended action",
+      "Ignores the irrelevant returns policy and password FAQ"
+    ]
+  },
+  {
+    "id": "task_09",
+    "category": "multi_tool_workflow",
+    "question": "Find the current price of AMZN stock, then create a calendar reminder for next Monday to review it, and send me an email summary.",
+    "conversation": [],
+    "documents": [],
+    "tools": [
+      { "name": "get_stock_price", "description": "Get the current stock price for a stock ticker symbol.", "input_schema": { "ticker": "string" } },
+      { "name": "create_calendar_event", "description": "Create a calendar event or reminder with a title, date, and optional notes.", "input_schema": { "title": "string", "date": "string", "notes": "string" } },
+      { "name": "send_email", "description": "Send an email to a recipient with a subject and body.", "input_schema": { "to": "string", "subject": "string", "body": "string" } },
+      { "name": "get_weather", "description": "Get current weather conditions for a city.", "input_schema": { "city": "string" } },
+      { "name": "search_web", "description": "Search the web for a given query string.", "input_schema": { "query": "string" } },
+      { "name": "translate_text", "description": "Translate text from one language to another.", "input_schema": { "text": "string", "target_language": "string" } }
+    ],
+    "rubric": [
+      "Uses get_stock_price with ticker AMZN",
+      "Uses create_calendar_event for next Monday",
+      "Uses send_email to send a summary",
+      "Does not use irrelevant tools (weather, search, translate)",
+      "Sequences the tools in a logical order"
+    ]
+  },
+  {
+    "id": "task_10",
+    "category": "complex_reasoning",
+    "question": "Should we migrate our monolith to microservices given the information provided?",
+    "conversation": [],
+    "documents": [
+      {
+        "id": "system_overview",
+        "content": "Current system: a Django monolith serving 50,000 daily active users. Deployment takes 45 minutes due to full test suite. The auth, payments, and notifications modules are the only components that have independent scaling needs. The team has 4 backend engineers, all with Django expertise and no Kubernetes experience."
+      },
+      {
+        "id": "incident_history",
+        "content": "In the last 6 months: 3 outages caused by the payments module, 1 caused by a bad migration affecting all modules, 0 outages in auth or notifications. Average resolution time: 2.1 hours."
+      },
+      {
+        "id": "cost_projection",
+        "content": "Migration estimate from external consultant: 8-12 months engineering time, $180,000 in consulting fees, plus 30% infrastructure cost increase due to service mesh and orchestration overhead."
+      },
+      {
+        "id": "unrelated_marketing",
+        "content": "Marketing update: Q4 campaign targeting SMB segment launches next month. Expected 15% increase in new user signups."
+      }
+    ],
+    "tools": [],
+    "rubric": [
+      "Recommends against full microservices migration",
+      "Cites team's lack of Kubernetes experience as a risk",
+      "Notes that only payments module has a real reliability problem",
+      "Suggests extracting only the payments service as a pragmatic middle ground",
+      "References the high cost and time estimate",
+      "Ignores the unrelated marketing document"
+    ]
   }
 ]
