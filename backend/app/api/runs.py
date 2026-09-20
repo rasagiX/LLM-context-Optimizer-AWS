@@ -6,15 +6,14 @@ GET  /api/v1/runs/{run_id} — fetch a previous run's results.
 import os
 import uuid
 
-import botocore.exceptions
 from fastapi import APIRouter, HTTPException
 
 from app.optimizer.pipeline import OptimizerContext, run as run_pipeline
 from app.optimizer.token_utils import count_tokens
 from app.schemas.requests import RunRequest
 from app.schemas.responses import ComparisonSummary, PipelineResult, RunResponse
-from app.services import bedrock, judge, store
-from app.services.bedrock import BedrockError
+from app.services import llm, judge, store
+from app.services.llm import LLMError
 
 router = APIRouter()
 
@@ -62,7 +61,8 @@ def _run_pipeline_variant(
     tools: list[dict],
 ) -> PipelineResult:
     prompt = _build_prompt(question, conversation, documents)
-    llm_result = bedrock.invoke(prompt=prompt)
+    # LLMError propagates to the caller (run()) which translates it to HTTPException.
+    llm_result = llm.invoke(prompt=prompt)
 
     input_tokens = llm_result.input_tokens or count_tokens(prompt)
     output_tokens = llm_result.output_tokens
@@ -125,7 +125,7 @@ async def run(req: RunRequest):
             if req.rubric:
                 quality_optimized = _safe_judge(req.question, optimized_result.answer, req.rubric)
 
-    except BedrockError as exc:
+    except LLMError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"LLM call failed: {str(exc)}") from exc

@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from app.schemas.requests import EvaluateRequest
 from app.schemas.responses import EvaluateResponse
 from app.services import judge
-from app.services.bedrock import BedrockError
+from app.services.llm import LLMError
 
 router = APIRouter()
 
@@ -14,6 +14,6 @@ router = APIRouter()
 async def evaluate(req: EvaluateRequest):
     try:
         quality = judge.evaluate(question=req.question, answer=req.answer, rubric=req.rubric)
-    except BedrockError as exc:
+    except LLMError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return EvaluateResponse(quality=quality)

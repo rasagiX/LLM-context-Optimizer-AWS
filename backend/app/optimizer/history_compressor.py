@@ -3,6 +3,9 @@ Conversation History Compressor.
 
 Keeps the most recent K turns verbatim and summarizes older turns into a
 structured system message using LLM or fact-extraction heuristics.
+
+Falls back to a heuristic summary if the LLM call fails, so the optimizer
+pipeline never hard-fails due to a summarization error.
 """
 
 import logging
@@ -46,7 +49,8 @@ def _extract_facts(messages: list[dict]) -> list[str]:
 
 
 def _llm_summarize(turns: list[dict]) -> str:
-    from app.services.bedrock import invoke  # noqa: PLC0415
+    """Call the LLM to summarize older conversation turns."""
+    from app.services.llm import invoke  # noqa: PLC0415
 
     convo_text = "\n".join(
         f"{m.get('role', 'user').upper()}: {m.get('content', '')}" for m in turns

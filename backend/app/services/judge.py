@@ -2,14 +2,14 @@
 Quality Judge.
 
 Scores an answer against a task-specific rubric using the LLM itself
-as an evaluator. Kept separate from bedrock.py so the judging prompt/
+as an evaluator. Kept separate from llm.py so the judging prompt/
 parsing logic lives in one place.
 """
 
 import json
 
 from app.schemas.responses import QualityScore
-from app.services import bedrock
+from app.services import llm
 
 JUDGE_SYSTEM_PROMPT = """You are a strict evaluation judge for LLM answers.
 You will be given a question, an answer, and a rubric (a list of criteria).
@@ -34,9 +34,15 @@ def evaluate(question: str, answer: str, rubric: list[str]) -> QualityScore:
         f"Rubric:\n{rubric_text}"
     )
 
-    result = bedrock.invoke(prompt=prompt, system=JUDGE_SYSTEM_PROMPT, max_tokens=500)
+    result = llm.invoke(prompt=prompt, system=JUDGE_SYSTEM_PROMPT, max_tokens=500)
 
-    cleaned = result.text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    cleaned = (
+        result.text.strip()
+        .removeprefix("```json")
+        .removeprefix("```")
+        .removesuffix("```")
+        .strip()
+    )
 
     try:
         parsed = json.loads(cleaned)
@@ -49,4 +55,7 @@ def evaluate(question: str, answer: str, rubric: list[str]) -> QualityScore:
     except (json.JSONDecodeError, TypeError, ValueError):
         # Judge failed to return valid JSON — surface a zero score rather
         # than silently fabricating one, and keep the raw text for debugging.
-        return QualityScore(score=0.0, rationale=f"Judge parse failure. Raw output: {cleaned[:300]}")
+        return QualityScore(
+            score=0.0,
+            rationale=f"Judge parse failure. Raw output: {cleaned[:300]}",
+        )
