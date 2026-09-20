@@ -87,39 +87,37 @@ _TITAN_DIMENSIONS = 512
 def _embed_bedrock(texts: List[str]) -> np.ndarray:
     """
     Embed a list of texts using Amazon Titan Embeddings V2 via Bedrock in parallel.
-
-    Uses ThreadPoolExecutor to run Bedrock API calls concurrently for high throughput.
-
-    Requires in environment (set in backend/.env):
-        AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
-        or an IAM role if running on EC2/Lambda.
+    Falls back to local sentence-transformers if Bedrock API fails or model access is denied.
     """
-    import boto3
-    from concurrent.futures import ThreadPoolExecutor
+    try:
+        import boto3
+        from concurrent.futures import ThreadPoolExecutor
 
-    client = boto3.client("bedrock-runtime", region_name=_BEDROCK_REGION)
+        client = boto3.client("bedrock-runtime", region_name=_BEDROCK_REGION)
 
-    def _embed_single(text: str) -> List[float]:
-        body = json.dumps({
-            "inputText": text,
-            "dimensions": _TITAN_DIMENSIONS,
-            "normalize": True,   # unit-normalise so cosine sim = dot product
-        })
-        response = client.invoke_model(
-            modelId=_BEDROCK_MODEL_ID,
-            body=body,
-            contentType="application/json",
-            accept="application/json",
-        )
-        payload = json.loads(response["body"].read())
-        return payload["embedding"]
+        def _embed_single(text: str) -> List[float]:
+            body = json.dumps({
+                "inputText": text,
+                "dimensions": _TITAN_DIMENSIONS,
+                "normalize": True,
+            })
+            response = client.invoke_model(
+                modelId=_BEDROCK_MODEL_ID,
+                body=body,
+                contentType="application/json",
+                accept="application/json",
+            )
+            payload = json.loads(response["body"].read())
+            return payload["embedding"]
 
-    # Use parallel threads for multi-document batching
-    max_workers = min(10, max(1, len(texts)))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        vectors = list(executor.map(_embed_single, texts))
+        max_workers = min(10, max(1, len(texts)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            vectors = list(executor.map(_embed_single, texts))
 
-    return np.array(vectors, dtype=np.float32)
+        return np.array(vectors, dtype=np.float32)
+    except Exception as exc:
+        logger.warning("[embedder] Bedrock embedding call failed (%s) — falling back to local sentence-transformers", exc)
+        return _embed_local(texts)
 
 
 # ---------------------------------------------------------------------------
