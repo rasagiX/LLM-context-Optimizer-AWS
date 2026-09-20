@@ -13,11 +13,14 @@ Environment variables:
                      Other options: gemini-1.5-pro, gemini-2.0-flash-exp
 """
 
+import logging
 import os
 import time
 from dataclasses import dataclass
 
 import google.generativeai as genai
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
