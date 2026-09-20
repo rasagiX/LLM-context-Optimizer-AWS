@@ -69,6 +69,7 @@ def _run_optimize(
         optimized_tokens=optimized_tokens,
         reduction_percent=reduction,
         latency_ms=latency_ms,
+        semantic_preservation_score=result.semantic_preservation_score,
     )
 
     return OptimizeResponse(
@@ -85,6 +86,7 @@ def _run_optimize(
         tokens_saved=tokens_saved,
         optimization_latency_ms=latency_ms,
         cost_saved_est=cost_saved_est,
+        semantic_preservation_score=result.semantic_preservation_score,
     )
 
 

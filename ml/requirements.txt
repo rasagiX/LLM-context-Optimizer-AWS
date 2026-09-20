@@ -8,4 +8,4 @@
 #   - No AWS SDK here yet — that will be added when we integrate Bedrock.
 
 sentence-transformers==3.0.1
-numpy>=1.24,<2.0
+numpy>=1.24

@@ -86,22 +86,20 @@ _TITAN_DIMENSIONS = 512
 
 def _embed_bedrock(texts: List[str]) -> np.ndarray:
     """
-    Embed a list of texts using Amazon Titan Embeddings V2 via Bedrock.
+    Embed a list of texts using Amazon Titan Embeddings V2 via Bedrock in parallel.
 
-    Titan does not support batch embedding — we call the API once per text.
-    For small lists (< 50 docs) this is fast enough. For larger workloads,
-    add concurrency here (asyncio.gather or a thread pool).
+    Uses ThreadPoolExecutor to run Bedrock API calls concurrently for high throughput.
 
     Requires in environment (set in backend/.env):
         AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
         or an IAM role if running on EC2/Lambda.
     """
     import boto3
+    from concurrent.futures import ThreadPoolExecutor
 
     client = boto3.client("bedrock-runtime", region_name=_BEDROCK_REGION)
-    vectors = []
 
-    for text in texts:
+    def _embed_single(text: str) -> List[float]:
         body = json.dumps({
             "inputText": text,
             "dimensions": _TITAN_DIMENSIONS,
@@ -114,7 +112,12 @@ def _embed_bedrock(texts: List[str]) -> np.ndarray:
             accept="application/json",
         )
         payload = json.loads(response["body"].read())
-        vectors.append(payload["embedding"])
+        return payload["embedding"]
+
+    # Use parallel threads for multi-document batching
+    max_workers = min(10, max(1, len(texts)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        vectors = list(executor.map(_embed_single, texts))
 
     return np.array(vectors, dtype=np.float32)
 

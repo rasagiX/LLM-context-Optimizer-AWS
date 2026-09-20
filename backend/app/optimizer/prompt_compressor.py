@@ -2,25 +2,24 @@
 Prompt Compressor.
 
 Reduces token count in document content without changing meaning.
-Uses two stages:
+Uses three stages:
     Stage 1 — Filler phrase removal: strips verbose phrases that add words
               but no information ("please note that", "it is worth mentioning
-              that", etc.). Expanded to 20+ patterns.
-    Stage 2 — Whitespace normalisation: collapses repeated spaces, tabs,
+              that", etc.).
+    Stage 2 — Selective ML token compression: sub-sentence information entropy
+              pruning and phrase simplification (via ml.token_compressor).
+    Stage 3 — Whitespace normalisation: collapses repeated spaces, tabs,
               and blank lines.
-
-This is intentionally conservative — correctness over compression.
-It will never remove a sentence that contains real information.
-A future LLM rewrite pass (LLMLingua-style) belongs here as Stage 3.
 """
 
+import logging
 import re
 from typing import List
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Stage 1 — Filler phrase patterns
-# Each pattern matches a verbose phrase that adds no information.
-# All are case-insensitive and replace with empty string.
 # ---------------------------------------------------------------------------
 
 _FILLER_PATTERNS: List[str] = [
@@ -66,15 +65,25 @@ def _remove_fillers(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Stage 2 — Whitespace normalisation
+# Stage 2 — Selective ML token compression
+# ---------------------------------------------------------------------------
+
+def _compress_tokens(text: str, question: str = "") -> str:
+    try:
+        from ml.token_compressor import compress_tokens
+        return compress_tokens(text, query=question)
+    except Exception as exc:
+        logger.debug("[prompt_compressor] ML token compressor unavailable: %s", exc)
+        return text
+
+
+# ---------------------------------------------------------------------------
+# Stage 3 — Whitespace normalisation
 # ---------------------------------------------------------------------------
 
 def _normalise_whitespace(text: str) -> str:
-    # Collapse multiple spaces/tabs on a single line
     text = re.sub(r"[ \t]+", " ", text)
-    # Collapse 3+ blank lines to 2
     text = re.sub(r"\n{3,}", "\n\n", text)
-    # Remove trailing spaces at end of each line
     text = re.sub(r" +\n", "\n", text)
     return text.strip()
 
@@ -83,24 +92,26 @@ def _normalise_whitespace(text: str) -> str:
 # Public interface
 # ---------------------------------------------------------------------------
 
-def compress(text: str) -> str:
+def compress(text: str, question: str = "") -> str:
     """
     Reduce token count in a document string without changing its meaning.
 
     Stages:
-        1. Strip filler phrases (20+ patterns)
-        2. Normalise whitespace
+        1. Strip filler phrases
+        2. ML selective token compression
+        3. Normalise whitespace
 
     Args:
         text: Document content string.
+        question: Optional user question for semantic alignment.
 
     Returns:
-        Compressed string. Guaranteed to be no longer than the input.
-        Returns the input unchanged if it's empty.
+        Compressed string.
     """
     if not text:
         return text
 
     text = _remove_fillers(text)
+    text = _compress_tokens(text, question=question)
     text = _normalise_whitespace(text)
     return text

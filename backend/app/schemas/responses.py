@@ -45,6 +45,7 @@ class OptimizeResponse(BaseModel):
     tokens_saved: Optional[int] = None
     optimization_latency_ms: Optional[int] = None
     cost_saved_est: Optional[float] = None
+    semantic_preservation_score: Optional[float] = None
 
 
 class EvaluateResponse(BaseModel):

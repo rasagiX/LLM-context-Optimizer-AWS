@@ -10,7 +10,7 @@ tiktoken>=0.8.0
 # Falls back to keyword overlap gracefully if not installed, but install this
 # for full semantic optimization.
 sentence-transformers==3.0.1
-numpy>=1.24,<2.0
+numpy>=1.24
 
 # Testing
 pytest>=8.0.0

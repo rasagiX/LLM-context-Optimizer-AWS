@@ -34,6 +34,7 @@ def prune_context(
     context_chunks: List[str],
     top_k: int = 5,
     threshold: float = 0.0,
+    use_reranker: bool = False,
 ) -> Dict[str, Any]:
     """
     Core pipeline: score and filter context chunks by relevance to a query.
@@ -43,6 +44,7 @@ def prune_context(
         context_chunks: List of text segments to evaluate.
         top_k:          Number of top-scoring chunks to return. -1 = no limit.
         threshold:      Minimum cosine similarity score to keep a chunk.
+        use_reranker:   If True, applies two-stage cross-encoder reranking.
 
     Returns:
         {
@@ -59,16 +61,25 @@ def prune_context(
 
     original_count = len(context_chunks)
 
-    query_vector = embed_query(query)
-    chunk_vectors = embed(context_chunks)
-    scores = score_chunks(query_vector, chunk_vectors)
+    if use_reranker:
+        from ml.reranker import rerank_chunks
+        ranked_pairs = rerank_chunks(
+            query=query,
+            chunks=context_chunks,
+            top_k=top_k,
+            threshold=threshold,
+        )
+    else:
+        query_vector = embed_query(query)
+        chunk_vectors = embed(context_chunks)
+        scores = score_chunks(query_vector, chunk_vectors)
 
-    ranked_pairs = rank_chunks(
-        chunks=context_chunks,
-        scores=scores,
-        top_k=top_k,
-        threshold=threshold,
-    )
+        ranked_pairs = rank_chunks(
+            chunks=context_chunks,
+            scores=scores,
+            top_k=top_k,
+            threshold=threshold,
+        )
 
     if ranked_pairs:
         ranked_chunks, ranked_scores = zip(*ranked_pairs)

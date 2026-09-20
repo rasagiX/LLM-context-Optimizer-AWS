@@ -64,22 +64,25 @@ def log_pipeline_execution(
     optimized_tokens: int,
     reduction_percent: float,
     latency_ms: int,
+    semantic_preservation_score: float = 1.0,
 ) -> None:
     """
     Helper to log and record metrics for an optimizer pipeline execution.
     """
     tokens_saved = max(0, original_tokens - optimized_tokens)
     logger.info(
-        "[%s] original_tokens=%d optimized_tokens=%d tokens_saved=%d reduction=%.2f%% latency=%dms",
+        "[%s] original_tokens=%d optimized_tokens=%d tokens_saved=%d reduction=%.2f%% latency=%dms semantic_score=%.4f",
         endpoint,
         original_tokens,
         optimized_tokens,
         tokens_saved,
         reduction_percent,
         latency_ms,
+        semantic_preservation_score,
     )
 
     put_metric("TokensSaved", float(tokens_saved), unit="Count", dimensions=[{"Name": "Endpoint", "Value": endpoint}])
     put_metric("OptimizationLatency", float(latency_ms), unit="Milliseconds", dimensions=[{"Name": "Endpoint", "Value": endpoint}])
     put_metric("TokenReductionPercent", float(reduction_percent), unit="Percent", dimensions=[{"Name": "Endpoint", "Value": endpoint}])
+    put_metric("SemanticPreservationScore", float(semantic_preservation_score), unit="Percent", dimensions=[{"Name": "Endpoint", "Value": endpoint}])
     put_metric("PipelineCalls", 1.0, unit="Count", dimensions=[{"Name": "Endpoint", "Value": endpoint}])
