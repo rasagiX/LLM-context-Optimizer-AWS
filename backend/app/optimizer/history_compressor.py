@@ -2,10 +2,10 @@
 Conversation History Compressor.
 
 Keeps the most recent K turns verbatim and summarises everything older
-into a structured system message using an LLM call via Bedrock.
+into a structured system message using an LLM call.
 
 Falls back to a heuristic summary (first-user-message as goal) if the
-Bedrock call fails, so the optimizer pipeline never hard-fails due to a
+LLM call fails, so the optimizer pipeline never hard-fails due to a
 summarisation error.
 """
 
@@ -27,13 +27,12 @@ Keep the summary under 120 words. Do not invent facts not present in the convers
 
 
 def _llm_summarize(turns: list[dict]) -> str:
-    """Call Bedrock to summarise older conversation turns.
+    """Call the LLM to summarise older conversation turns.
 
     Returns the summary text, or raises on failure (caller handles fallback).
     """
-    # Import here to avoid a circular dependency at module load time
-    # (bedrock → no imports from optimizer; optimizer → bedrock is fine at call time).
-    from app.services.bedrock import invoke  # noqa: PLC0415
+    # Import here to avoid a circular dependency at module load time.
+    from app.services.llm import invoke  # noqa: PLC0415
 
     convo_text = "\n".join(
         f"{m.get('role', 'user').upper()}: {m.get('content', '')}" for m in turns
