@@ -3,11 +3,11 @@ Tests for AWS services, local mock modes, and fallbacks.
 """
 
 from app.config import settings
-from app.services import bedrock, cloudwatch, judge, s3, store
+from app.services import llm, cloudwatch, judge, s3, store
 
 
-def test_bedrock_local_mock_mode():
-    res = bedrock.invoke(prompt="Test prompt", system=None)
+def test_llm_local_mock_mode():
+    res = llm.invoke(prompt="Test prompt", system=None)
     assert res.text != ""
     assert res.input_tokens > 0
     assert res.latency_ms >= 0
